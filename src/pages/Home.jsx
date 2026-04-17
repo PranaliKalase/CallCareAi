@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, MicOff, Calendar as CalendarIcon, FileText, Volume2, Loader2, X, Send, Clock, Users, Stethoscope, Building2, Zap, Activity } from 'lucide-react';
+import { Mic, MicOff, Calendar as CalendarIcon, FileText, Volume2, Loader2, X, Send, Clock, Users, Stethoscope, Building2, Zap, Activity, PlusSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { sendToGemini, startSpeechRecognition, speakText } from '../services/geminiVoice';
 import { useAuth } from '../context/AuthContext';
@@ -442,11 +442,11 @@ const Home = () => {
           </div>
           <span className="text-[11px] font-bold text-gray-700">Bookings</span>
         </button>
-        <button onClick={() => navigate('/symptom-checker')} className="flex-[3] bg-gradient-to-br from-primary-600 to-primary-800 rounded-2xl p-4 flex flex-col items-center justify-center shadow-md hover:shadow-lg transition-all active:-translate-y-0.5">
+        <button onClick={() => navigate('/emergency')} className="flex-[3] bg-gradient-to-br from-red-600 to-red-800 rounded-2xl p-4 flex flex-col items-center justify-center shadow-md hover:shadow-lg transition-all active:-translate-y-0.5">
           <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center mb-1.5 backdrop-blur-sm">
-             <Activity className="w-4 h-4 text-white" />
+             <PlusSquare className="w-4 h-4 text-white" />
           </div>
-          <span className="text-[11px] font-bold text-white">AI Predict</span>
+          <span className="text-[11px] font-bold text-white">Emergency</span>
         </button>
         <button onClick={() => navigate('/records')} className="flex-[2] bg-white rounded-2xl p-4 flex flex-col items-center justify-center shadow-sm border border-gray-100 hover:border-primary-200 transition-all active:scale-95">
           <div className="w-10 h-10 rounded-full bg-primary-50 flex items-center justify-center mb-1.5">

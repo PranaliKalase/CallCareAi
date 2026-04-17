@@ -13,6 +13,8 @@ import Records from './pages/Records';
 import SymptomChecker from './pages/SymptomChecker';
 
 import EmergencyTracker from './pages/EmergencyTracker';
+import IcuBeds from './pages/IcuBeds';
+import HospitalDetail from './pages/HospitalDetail';
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children, roleRequired }) => {
@@ -196,9 +198,9 @@ const Sidebar = () => {
       ]
     : [
         { name: 'Dashboard', icon: HomeIcon, path: '/home' },
+        { name: 'ICU Beds', icon: Activity, path: '/icu-beds' },
         { name: 'Bookings', icon: CalendarIcon, path: '/bookings' },
         { name: 'Medical Records', icon: History, path: '/records' },
-        { name: 'AI Predict', icon: Activity, path: '/symptom-checker' },
         { name: 'My Profile', icon: UserIcon, path: '/profile' },
       ];
 
@@ -279,10 +281,10 @@ const BottomNav = () => {
         { name: 'Profile', icon: UserIcon, path: '/profile' }
       ]
     : [
+        { name: 'Ambulance', icon: PlusSquare, path: '/emergency', isEmergency: true },
+        { name: 'ICU Beds', icon: Activity, path: '/icu-beds' },
         { name: 'Home', icon: HomeIcon, path: '/home' },
         { name: 'Bookings', icon: CalendarIcon, path: '/bookings' },
-        { name: 'AI Predict', icon: Activity, path: '/symptom-checker' },
-        { name: 'Ambulance', icon: PlusSquare, path: '/emergency', isEmergency: true },
         { name: 'Profile', icon: UserIcon, path: '/profile' }
       ];
 
@@ -332,7 +334,7 @@ function App() {
   const getRedirectPath = () => {
     if (profile?.role === 'doctor') return '/doctor-dashboard';
     if (profile?.role === 'hospital') return '/hospital-dashboard';
-    return '/home';
+    return '/emergency';
   };
 
   return (
@@ -355,6 +357,8 @@ function App() {
               <Route path="/records" element={<ProtectedRoute><Records /></ProtectedRoute>} />
               <Route path="/symptom-checker" element={<ProtectedRoute><SymptomChecker /></ProtectedRoute>} />
               <Route path="/emergency" element={<ProtectedRoute><EmergencyTracker /></ProtectedRoute>} />
+              <Route path="/icu-beds" element={<ProtectedRoute><IcuBeds /></ProtectedRoute>} />
+              <Route path="/hospital/:id" element={<ProtectedRoute><HospitalDetail /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route 
                 path="/hospital-dashboard/*" 

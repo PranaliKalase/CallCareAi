@@ -32,7 +32,7 @@ const LandingPage = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl mt-16">
         {[
           { icon: <Clock className="w-6 h-6 text-primary-500" />, title: "Instant Booking", desc: "Find available slots dynamically and book your appointment instantly without hassle." },
-          { icon: <Mic className="w-6 h-6 text-primary-600" />, title: "AI Voice Assistant", desc: "Speak naturally to book appointments, check symptoms, and get health guidance instantly." },
+          { icon: <Mic className="w-6 h-6 text-primary-600" />, title: "Emergency Tracking", desc: "Quickly locate and book the nearest ambulances and check real-time ICU bed availability." },
           { icon: <Shield className="w-6 h-6 text-primary-700" />, title: "Secure Records", desc: "Your data is encrypted end-to-end, providing maximum privacy and compliance." }
         ].map((feature, i) => (
           <div key={i} className="card p-8 text-left hover:-translate-y-1 transition-transform duration-300 glass bg-white/60">
