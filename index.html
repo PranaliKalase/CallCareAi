@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/jpeg" href="/carepluslogo.jpeg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Careplus - Health Portal</title>
+    <!-- Use Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Google Translate -->
+    <style>
+      /* Hide default Google Translate bar */
+      .goog-te-banner-frame, #goog-gt-tt, .goog-te-balloon-frame { display: none !important; }
+      body { top: 0 !important; }
+      .skiptranslate { display: none !important; }
+      .goog-text-highlight { background: none !important; box-shadow: none !important; }
+    </style>
+  </head>
+  <body>
+    <!-- Hidden Google Translate element -->
+    <div id="google_translate_element" style="display:none"></div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script>
+      function googleTranslateElementInit() {
+        new google.translate.TranslateElement({
+          pageLanguage: 'en',
+          includedLanguages: 'en,hi,mr,gu,ta,te,kn,ml,bn,pa,ur,ar,fr,es,de,zh-CN,ja,ko,pt,ru',
+          autoDisplay: false
+        }, 'google_translate_element');
+      }
+    </script>
+    <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+  </body>
+</html>
