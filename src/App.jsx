@@ -15,6 +15,7 @@ import SymptomChecker from './pages/SymptomChecker';
 import EmergencyTracker from './pages/EmergencyTracker';
 import IcuBeds from './pages/IcuBeds';
 import HospitalDetail from './pages/HospitalDetail';
+import RoomAllocation from './pages/RoomAllocation';
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children, roleRequired }) => {
@@ -194,6 +195,7 @@ const Sidebar = () => {
     : profile?.role === 'hospital'
     ? [
         { name: 'Dashboard', icon: Building, path: '/hospital-dashboard' },
+        { name: 'Room Allocation', icon: Activity, path: '/room-allocation' },
         { name: 'My Profile', icon: UserIcon, path: '/profile' }
       ]
     : [
@@ -278,6 +280,7 @@ const BottomNav = () => {
     : profile?.role === 'hospital'
     ? [
         { name: 'Dashboard', icon: Building, path: '/hospital-dashboard' },
+        { name: 'Rooms', icon: Activity, path: '/room-allocation' },
         { name: 'Profile', icon: UserIcon, path: '/profile' }
       ]
     : [
@@ -365,6 +368,14 @@ function App() {
                 element={
                   <ProtectedRoute roleRequired="hospital">
                     <HospitalDashboard />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/room-allocation" 
+                element={
+                  <ProtectedRoute roleRequired="hospital">
+                    <RoomAllocation />
                   </ProtectedRoute>
                 } 
               />

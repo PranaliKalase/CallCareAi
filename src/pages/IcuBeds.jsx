@@ -3,6 +3,9 @@ import { supabase } from '../services/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Building2 as Hospital, Navigation2, Activity, ShieldPlus, MapPin, Phone, Loader2, Filter, CheckCircle2, Search, Crosshair, Clock, Eye, PlusSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 const getDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371; 
@@ -15,12 +18,52 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; 
 };
 
+const defaultIcon = new L.Icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32],
+});
+
+const LocationMarker = ({ position, setPosition, setAddress }) => {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (position) {
+      map.flyTo(position, map.getZoom());
+    }
+  }, [position, map]);
+
+  useMapEvents({
+    click(e) {
+      const newPos = e.latlng;
+      setPosition([newPos.lat, newPos.lng]);
+      fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${newPos.lat}&lon=${newPos.lng}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.display_name) {
+             setAddress(data.display_name);
+          }
+        }).catch(err => console.error(err));
+    },
+  });
+
+  return position === null ? null : (
+    <Marker position={position} icon={defaultIcon}>
+      <Popup>Selected Location</Popup>
+    </Marker>
+  );
+};
+
 // ======= FEATURE 1: Location Prompt Component =======
 const LocationPrompt = ({ onLocationSelected }) => {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [isLocating, setIsLocating] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  
+  const [mapPosition, setMapPosition] = useState([19.0760, 72.8777]); // Default Mumbai
+  const [address, setAddress] = useState('');
 
   useEffect(() => {
     if (query.trim().length < 3) {
@@ -34,16 +77,11 @@ const LocationPrompt = ({ onLocationSelected }) => {
         if (!res.ok) throw new Error("API responded with error");
         const data = await res.json();
         
-        if (data.length === 0) {
-           setSuggestions([{ display_name: `${query} (Estimated)`, lat: '19.0760', lon: '72.8777' }]);
-        } else {
+        if (data.length > 0) {
            setSuggestions(data);
         }
       } catch (e) {
         console.error("Geocoding failed", e);
-        setSuggestions([
-          { display_name: `${query} (Default City Center)`, lat: '19.0760', lon: '72.8777' }
-        ]);
       }
       setIsSearching(false);
     }, 500);
@@ -52,28 +90,57 @@ const LocationPrompt = ({ onLocationSelected }) => {
 
   const handleUseGPS = () => {
     setIsLocating(true);
+
+    const fallbackToIP = async () => {
+      try {
+        const res = await fetch('https://ipapi.co/json/');
+        const data = await res.json();
+        if (data && data.latitude && data.longitude) {
+           const newPos = [data.latitude, data.longitude];
+           setMapPosition(newPos);
+           setAddress(`${data.city || 'Unknown City'}, ${data.region || 'Unknown Region'}`);
+        } else {
+           alert("Unable to detect location automatically. Please select it on the map.");
+        }
+      } catch(e) {
+        alert("Unable to detect location automatically. Please select it on the map.");
+      }
+      setIsLocating(false);
+    };
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setIsLocating(false);
-        onLocationSelected({ lat: pos.coords.latitude, lng: pos.coords.longitude, address: 'Your Current Location' });
+        const newPos = [pos.coords.latitude, pos.coords.longitude];
+        setMapPosition(newPos);
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${newPos[0]}&lon=${newPos[1]}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.display_name) {
+               setAddress(data.display_name || 'Your Current Location');
+            } else {
+               setAddress('Your Current Location');
+            }
+          }).catch(() => setAddress('Your Current Location'));
       },
       (err) => {
-        setIsLocating(false);
-        alert("Unable to access GPS. Please type your location manually.");
+        console.warn("Native GPS failed, falling back to IP Geolocation API", err);
+        fallbackToIP();
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 5000 }
     );
   };
 
   const handleSelectPlace = (place) => {
-    onLocationSelected({ lat: parseFloat(place.lat), lng: parseFloat(place.lon), address: place.display_name });
+    const newPos = [parseFloat(place.lat), parseFloat(place.lon)];
+    setMapPosition(newPos);
+    setAddress(place.display_name);
+    setQuery('');
+    setSuggestions([]);
   };
 
-  const handleFormSubmit = (e) => {
-    e.preventDefault();
-    if (query.trim().length > 0) {
-       onLocationSelected({ lat: 19.0760, lng: 72.8777, address: query + ' (Estimated)' });
-    }
+  const handleConfirm = () => {
+    onLocationSelected({ lat: mapPosition[0], lng: mapPosition[1], address: address || 'Selected Location' });
   };
 
   return (
@@ -81,63 +148,87 @@ const LocationPrompt = ({ onLocationSelected }) => {
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-red-500/5 rounded-full blur-[100px] pointer-events-none -translate-y-1/2 translate-x-1/4"></div>
       <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-500/5 rounded-full blur-[80px] pointer-events-none translate-y-1/3 -translate-x-1/3"></div>
 
-      <div className="w-full max-w-md bg-white border border-gray-100 rounded-3xl shadow-2xl shadow-gray-200/50 p-8 relative z-10">
-        <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mb-6 mx-auto border border-red-100">
-          <MapPin className="w-8 h-8 text-red-500" />
+      <div className="w-full max-w-2xl bg-white border border-gray-100 rounded-3xl shadow-2xl shadow-gray-200/50 p-6 relative z-10">
+        
+        <h2 className="text-xl font-extrabold text-gray-900 text-center mb-1 tracking-tight">Select Your Location</h2>
+        <p className="text-xs text-gray-500 text-center mb-6 font-medium">We need your location to find the nearest available ICU beds instantly.</p>
+
+        <div className="flex flex-col md:flex-row gap-4 mb-4">
+          <button 
+            onClick={handleUseGPS}
+            disabled={isLocating}
+            className="flex-1 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 active:scale-[0.98] text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-red-500/20 transition-all flex items-center justify-center gap-2"
+          >
+            {isLocating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crosshair className="w-4 h-4" />}
+            {isLocating ? 'Detecting...' : 'Use My GPS'}
+          </button>
+          
+          <div className="flex-1 relative">
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-gray-400" />
+            </div>
+            <input
+              type="text"
+              className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all"
+              placeholder="Search area..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {isSearching && (
+              <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                <Loader2 className="h-4 w-4 text-gray-400 animate-spin" />
+              </div>
+            )}
+            
+            {/* Auto-suggestions */}
+            {suggestions.length > 0 && (
+              <div className="mt-1 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden absolute w-full z-[1000] max-h-48 overflow-y-auto">
+                {suggestions.map((place, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleSelectPlace(place)}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-50 last:border-0 flex items-start gap-2 transition-colors"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
+                    <span className="text-xs text-gray-700 font-medium line-clamp-2 leading-tight">
+                      {place.display_name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="w-full h-[250px] rounded-xl overflow-hidden shadow-inner border border-gray-200 mb-4 z-0">
+          <MapContainer 
+            center={mapPosition} 
+            zoom={13} 
+            className="w-full h-full z-0"
+            zoomControl={false}
+          >
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              attribution='&copy; OpenStreetMap &copy; CARTO'
+            />
+            <LocationMarker position={mapPosition} setPosition={setMapPosition} setAddress={setAddress} />
+          </MapContainer>
         </div>
         
-        <h2 className="text-2xl font-extrabold text-gray-900 text-center mb-2 tracking-tight">Where are you?</h2>
-        <p className="text-sm text-gray-500 text-center mb-8 font-medium">We need your location to find the nearest available ICU beds instantly.</p>
-
-        <button 
-          onClick={handleUseGPS}
-          disabled={isLocating}
-          className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 active:scale-[0.98] text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-red-500/20 transition-all flex items-center justify-center gap-2 mb-6 border border-red-500/50"
-        >
-          {isLocating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Crosshair className="w-5 h-5" />}
-          {isLocating ? 'Detecting Location...' : 'Use My Current Location'}
-        </button>
-
-        <div className="relative flex items-center justify-center mb-6">
-          <div className="absolute inset-x-0 h-px bg-gray-100"></div>
-          <span className="relative bg-white px-4 text-xs font-bold text-gray-400 tracking-wider uppercase">or search manually</span>
-        </div>
-
-        <form onSubmit={handleFormSubmit} className="relative">
-          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400" />
-          </div>
-          <input
-            type="text"
-            className="w-full pl-11 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all"
-            placeholder="Enter area, city or pin code"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {isSearching && (
-            <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
-              <Loader2 className="h-4 w-4 text-gray-400 animate-spin" />
-            </div>
-          )}
-        </form>
-
-        {/* Auto-suggestions */}
-        {suggestions.length > 0 && (
-          <div className="mt-2 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden absolute w-[calc(100%-4rem)] z-20">
-            {suggestions.map((place, i) => (
-              <button
-                key={i}
-                onClick={() => handleSelectPlace(place)}
-                className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-50 last:border-0 flex items-start gap-3 transition-colors"
-              >
-                <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
-                <span className="text-sm text-gray-700 font-medium line-clamp-2 leading-tight">
-                  {place.display_name}
-                </span>
-              </button>
-            ))}
+        {address && (
+          <div className="bg-gray-50 p-3 rounded-xl mb-4 border border-gray-100 flex items-start gap-2">
+            <MapPin className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-gray-700 font-medium leading-tight">{address}</p>
           </div>
         )}
+
+        <button 
+          onClick={handleConfirm}
+          className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg active:scale-[0.98] transition-all flex items-center justify-center"
+        >
+          Confirm Location
+        </button>
+
       </div>
     </div>
   );
@@ -156,8 +247,8 @@ const IcuBeds = () => {
   const [loading, setLoading] = useState(true);
   
   // Filters
-  const [distanceFilter, setDistanceFilter] = useState(5000); // large default so test hospitals always show
-  const [availabilityFilter, setAvailabilityFilter] = useState('All'); // All, Available, Limited, Full
+  const [distanceFilter, setDistanceFilter] = useState(100); 
+  const [availabilityFilter, setAvailabilityFilter] = useState('All'); 
   const [specializationFilter, setSpecializationFilter] = useState('All');
   
   const [allSpecializations, setAllSpecializations] = useState([]);
@@ -200,15 +291,33 @@ const IcuBeds = () => {
       });
       setAllSpecializations(['All', ...Array.from(specSet)]);
 
-      const withDistance = data.filter(h => h.lat && h.lng).map(h => {
-        const dist = getDistance(loc.lat, loc.lng, h.lat, h.lng);
-        const etaMins = Math.ceil(dist * 2 + 3);
+      const searchKeywords = loc.address ? loc.address.toLowerCase().split(/[\\s,]+/) : [];
+
+      const withDistance = data.map(h => {
+        let dist = Infinity;
+        if (h.lat && h.lng && loc.lat && loc.lng) {
+          dist = getDistance(loc.lat, loc.lng, h.lat, h.lng);
+        }
+
+        // Keyword Match Fallback
+        const hospText =(h.full_name + " " + h.address + " " + h.city).toLowerCase();
+        let hasKeywordMatch = false;
+        
+        // If they don't have lat/lng but match the city/address keywords, give them a synthetic 0km distance
+        if (searchKeywords.length > 0 && searchKeywords.some(kw => kw.length > 3 && hospText.includes(kw))) {
+            hasKeywordMatch = true;
+            if (dist === Infinity) dist = 0.5; // Simulate a close distance if it's a keyword match but no GPS
+            // If GPS places it far away, but they searched exactly for this hospital name or area, we can still show it
+        }
+
+        const etaMins = dist !== Infinity ? Math.ceil(dist * 2 + 3) : 15;
         return {
           ...h,
           distance: dist,
           eta: etaMins,
           icuBeds: h.available_icu_beds || 0,
-          specializations: h.specializations || []
+          specializations: h.specializations || [],
+          isKeywordMatch: hasKeywordMatch
         };
       }).sort((a, b) => a.distance - b.distance);
       
@@ -252,7 +361,8 @@ const IcuBeds = () => {
 
   // Determine filtered hospitals
   const filteredHospitals = hospitals.filter(h => {
-    if (h.distance > distanceFilter) return false;
+    // Show if within distance OR if it was an explicit keyword match for their typed location
+    if (h.distance > distanceFilter && !h.isKeywordMatch) return false;
     if (availabilityFilter === 'Available' && h.icuBeds < 3) return false;
     if (availabilityFilter === 'Limited' && (h.icuBeds === 0 || h.icuBeds >= 3)) return false;
     if (availabilityFilter === 'Full' && h.icuBeds > 0) return false;
@@ -295,7 +405,7 @@ const IcuBeds = () => {
              <div className="flex-1 flex items-center gap-2">
                <span className="text-[10px] font-bold text-gray-500 uppercase whitespace-nowrap">Max Dist:</span>
                <input 
-                 type="range" min="1" max="5000" 
+                 type="range" min="1" max="100" 
                  value={distanceFilter} 
                  onChange={(e) => setDistanceFilter(parseInt(e.target.value))}
                  className="flex-1 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red-500"
