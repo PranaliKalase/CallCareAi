@@ -99,74 +99,83 @@ const EmergencyTracker = () => {
   // Initial Data Fetch & Location
   useEffect(() => {
     const init = async () => {
-      // Force Pune location for demo consistency matching our DB seeds
-      // This prevents patients' real locations (e.g., Patna) from pulling 
-      // ambulances 1000s of miles away from the seeded hospitals
-      let loc = { lat: 18.5204, lng: 73.8567 };
+      try {
+        // Force Pune location for demo consistency matching our DB seeds
+        // This prevents patients' real locations (e.g., Patna) from pulling 
+        // ambulances 1000s of miles away from the seeded hospitals
+        let loc = { lat: 18.5204, lng: 73.8567 };
 
-      if (prefillLat && prefillLng) {
-        loc = { lat: parseFloat(prefillLat), lng: parseFloat(prefillLng) };
-      }
-      
-      setUserLocation(loc);
-
-      // 2. Fetch Hospitals
-      const { data } = await supabase.from('hospital_admins').select('id, full_name, city, state, address, lat, lng, available_icu_beds');
-      if (data) {
-        // Assign real ICU beds from DB
-        const withIcu = data.filter(h => h.lat && h.lng).map(h => ({
-          ...h,
-          icuBeds: h.available_icu_beds || 0,
-          distance: getDistance(loc.lat, loc.lng, h.lat, h.lng)
-        })).sort((a, b) => a.distance - b.distance);
-        setHospitals(withIcu);
-      }
-
-      // 3. Fetch Real Drivers & Dummy Ambulances
-      const [realRes, dummyRes] = await Promise.all([
-        supabase.from('ambulance_drivers').select('*'),
-        supabase.from('ambulances').select('*')
-      ]);
-
-      const realDrivers = realRes.data || [];
-      const dummyAmbs = dummyRes.data || [];
-
-      let mergedAmbs = [];
-      let needsDbSync = false;
-
-      // Handle real drivers
-      realDrivers.forEach(a => {
-        const aLat = a.lat || loc.lat + ((Math.random() - 0.5) * 0.05);
-        const aLng = a.lng || loc.lng + ((Math.random() - 0.5) * 0.05);
-        const dist = getDistance(loc.lat, loc.lng, aLat, aLng);
-        mergedAmbs.push({ ...a, lat: aLat, lng: aLng, distance: dist, is_dummy: false, title_name: a.full_name });
-      });
-
-      // Handle dummy ambulances (teleport near user)
-      dummyAmbs.forEach(a => {
-        const dist = getDistance(loc.lat, loc.lng, a.lat, a.lng);
-        if (!a.lat || dist > 50) {
-          needsDbSync = true;
-          const offsetLat = (Math.random() - 0.5) * 0.05;
-          const offsetLng = (Math.random() - 0.5) * 0.05;
-          mergedAmbs.push({ ...a, lat: loc.lat + offsetLat, lng: loc.lng + offsetLng, distance: getDistance(loc.lat, loc.lng, loc.lat + offsetLat, loc.lng + offsetLng), is_dummy: true, title_name: a.driver_name });
-        } else {
-          mergedAmbs.push({ ...a, distance: dist, is_dummy: true, title_name: a.driver_name });
+        if (prefillLat && prefillLng) {
+          loc = { lat: parseFloat(prefillLat), lng: parseFloat(prefillLng) };
         }
-      });
+        
+        setUserLocation(loc);
 
-      if (needsDbSync) {
-        mergedAmbs.filter(a => a.is_dummy).forEach(async (a) => {
-          await supabase.from('ambulances').update({ lat: a.lat, lng: a.lng }).eq('id', a.id);
+        // 2. Fetch Hospitals
+        const { data } = await supabase.from('hospital_admins').select('id, full_name, city, state, address, lat, lng, available_icu_beds');
+        if (data) {
+          // Assign real ICU beds from DB
+          const withIcu = data.filter(h => h.lat && h.lng).map(h => ({
+            ...h,
+            icuBeds: h.available_icu_beds || 0,
+            distance: getDistance(loc.lat, loc.lng, h.lat, h.lng)
+          })).sort((a, b) => a.distance - b.distance);
+          setHospitals(withIcu);
+        }
+
+        // 3. Fetch Real Drivers & Dummy Ambulances
+        const [realRes, dummyRes] = await Promise.all([
+          supabase.from('ambulance_drivers').select('*'),
+          supabase.from('ambulances').select('*')
+        ]);
+
+        if (realRes.error) console.error("Real drivers fetch error:", realRes.error);
+        if (dummyRes.error) console.error("Dummy ambulances fetch error:", dummyRes.error);
+
+        const realDrivers = realRes.data || [];
+        const dummyAmbs = dummyRes.data || [];
+
+        let mergedAmbs = [];
+        let needsDbSync = false;
+
+        // Handle real drivers
+        realDrivers.forEach(a => {
+          const aLat = a.lat || loc.lat + ((Math.random() - 0.5) * 0.05);
+          const aLng = a.lng || loc.lng + ((Math.random() - 0.5) * 0.05);
+          const dist = getDistance(loc.lat, loc.lng, aLat, aLng);
+          mergedAmbs.push({ ...a, lat: aLat, lng: aLng, distance: dist, is_dummy: false, title_name: a.full_name });
         });
-      }
 
-      setAmbulances(mergedAmbs);
-      setLoading(false);
+        // Handle dummy ambulances (teleport near user)
+        dummyAmbs.forEach(a => {
+          const dist = getDistance(loc.lat, loc.lng, a.lat, a.lng);
+          if (!a.lat || dist > 50) {
+            needsDbSync = true;
+            const offsetLat = (Math.random() - 0.5) * 0.05;
+            const offsetLng = (Math.random() - 0.5) * 0.05;
+            mergedAmbs.push({ ...a, lat: loc.lat + offsetLat, lng: loc.lng + offsetLng, distance: getDistance(loc.lat, loc.lng, loc.lat + offsetLat, loc.lng + offsetLng), is_dummy: true, title_name: a.driver_name });
+          } else {
+            mergedAmbs.push({ ...a, distance: dist, is_dummy: true, title_name: a.driver_name });
+          }
+        });
+
+        if (needsDbSync) {
+          mergedAmbs.filter(a => a.is_dummy).forEach(async (a) => {
+            await supabase.from('ambulances').update({ lat: a.lat, lng: a.lng }).eq('id', a.id);
+          });
+        }
+
+        setAmbulances(mergedAmbs);
+        setLoading(false);
+      } catch (err) {
+        console.error("Init crash:", err);
+        alert("System initialization failed: " + err.message);
+        setLoading(false);
+      }
     };
 
     init();
-  }, []);
+  }, [prefillLat, prefillLng]);
 
   // Listen to realtime GPS updates from both tables
   useEffect(() => {

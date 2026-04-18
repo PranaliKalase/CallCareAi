@@ -20,66 +20,84 @@ const RoomAllocation = () => {
   const [loading, setLoading] = useState(true);
   const [savingSync, setSavingSync] = useState(false);
 
-  // Initialize Data
+  // Initialize Data from Supabase
   useEffect(() => {
     if (!user) return;
     
-    // Check local storage for persistent testing data to honor manual toggles
-    const stored = localStorage.getItem(`careplus_beds_${user.id}`);
-    if (stored) {
-      setBedsData(JSON.parse(stored));
-      setLoading(false);
-    } else {
-      // Mock deterministic structure
-      const generateWards = (count, prefix) => {
-        return Array.from({ length: count }).map((_, i) => ({
-          id: `${prefix}-bed-${i}`,
-          name: `BED ${i + 1}`,
-          // randomize default availability just to have some red
-          isAvailable: i < count / 2 
-        }));
-      };
+    const fetchLayout = async () => {
+      const { data, error } = await supabase
+        .from('hospital_admins')
+        .select('rooms_layout')
+        .eq('id', user.id)
+        .single();
+        
+      const generateWards = (count, prefix) => Array.from({ length: count }).map((_, i) => ({
+        id: `${prefix}-bed-${i}`, name: `BED ${i + 1}`, isAvailable: false 
+      }));
 
-      const newBedsData = {
-        'ICU': [...generateWards(15, 'icu-ward-a'), ...generateWards(10, 'icu-ward-b')],
-        'General Ward': generateWards(40, 'gen'),
-        'Emergency': generateWards(8, 'er')
-      };
+      let layout = data?.rooms_layout || {};
       
-      setBedsData(newBedsData);
-      setLoading(false);
-    }
-  }, [user]);
+      const enforce20 = (beds, prefix) => {
+        let aligned = Array.isArray(beds) ? beds : [];
+        if (aligned.length > 20) return aligned.slice(0, 20);
+        if (aligned.length < 20) {
+          const extra = Array.from({ length: 20 - aligned.length }).map((_, i) => ({
+            id: `${prefix}-bed-${aligned.length + i}`, name: `BED ${aligned.length + i + 1}`, isAvailable: false 
+          }));
+          return [...aligned, ...extra];
+        }
+        return aligned;
+      };
 
-  // Sync to database 'available_icu_beds' when ICU beds change specifically
-  useEffect(() => {
-    if (loading || !user) return;
-    
-    localStorage.setItem(`careplus_beds_${user.id}`, JSON.stringify(bedsData));
-    
-    const syncDb = async () => {
-      setSavingSync(true);
-      const openIcu = bedsData['ICU'].filter(b => b.isAvailable).length;
-      await supabase.from('hospital_admins').update({ available_icu_beds: openIcu }).eq('id', user.id);
-      setSavingSync(false);
+      setBedsData({
+        'ICU': enforce20(layout['ICU'], 'icu'),
+        'General Ward': enforce20(layout['General Ward'], 'gen'),
+        'Emergency': enforce20(layout['Emergency'], 'er')
+      });
+      setLoading(false);
     };
 
-    const debounce = setTimeout(syncDb, 1000);
-    return () => clearTimeout(debounce);
-  }, [bedsData, user, loading]);
+    fetchLayout();
+
+    // Subscribe to external realtime changes (e.g. from Patient bookings)
+    const channel = supabase.channel(`hospital_admin_room_${user.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'hospital_admins', filter: `id=eq.${user.id}`
+      }, (payload) => {
+        if (payload.new.rooms_layout) {
+          setBedsData(payload.new.rooms_layout);
+        }
+      }).subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [user]);
+
+  // Sync to database 'available_icu_beds' AND 'rooms_layout' when beds change locally
+  const syncDb = async (newBedsData) => {
+    setSavingSync(true);
+    const openIcu = newBedsData['ICU'].filter(b => b.isAvailable).length;
+    await supabase.from('hospital_admins')
+      .update({ available_icu_beds: openIcu, rooms_layout: newBedsData })
+      .eq('id', user.id);
+    setSavingSync(false);
+  };
 
   const toggleBedAvailable = (targetId) => {
-    setBedsData(prev => ({
-      ...prev,
-      [activeTab]: prev[activeTab].map(b => b.id === targetId ? { ...b, isAvailable: true } : b)
-    }));
+    const newData = {
+      ...bedsData,
+      [activeTab]: bedsData[activeTab].map(b => b.id === targetId ? { ...b, isAvailable: true } : b)
+    };
+    setBedsData(newData);
+    syncDb(newData);
   };
 
   const toggleBedUnavailable = (targetId) => {
-    setBedsData(prev => ({
-      ...prev,
-      [activeTab]: prev[activeTab].map(b => b.id === targetId ? { ...b, isAvailable: false } : b)
-    }));
+    const newData = {
+      ...bedsData,
+      [activeTab]: bedsData[activeTab].map(b => b.id === targetId ? { ...b, isAvailable: false } : b)
+    };
+    setBedsData(newData);
+    syncDb(newData);
   };
 
   if (loading) {

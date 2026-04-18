@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../services/supabase';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
+import { calculateDijkstraPath } from '../utils/DijkstraGraph';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapPin, Navigation, Phone, CheckCircle, XCircle, Power, User as UserIcon } from 'lucide-react';
@@ -15,6 +16,11 @@ const driverIcon = new L.Icon({
 });
 const patientIcon = new L.Icon({
   iconUrl: 'https://cdn-icons-png.flaticon.com/512/3004/3004455.png',
+  iconSize: [36, 36],
+  iconAnchor: [18, 36]
+});
+const hospitalIcon = new L.Icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/3004/3004470.png',
   iconSize: [36, 36],
   iconAnchor: [18, 36]
 });
@@ -38,6 +44,8 @@ export default function DriverDashboard() {
   const [requests, setRequests] = useState([]);
   const [activeJob, setActiveJob] = useState(null);
   const [watchId, setWatchId] = useState(null);
+  const [dijkstraRoute, setDijkstraRoute] = useState([]);
+  const [targetHospital, setTargetHospital] = useState(null);
   
   // Realtime subscription ref
   const subRef = useRef(null);
@@ -169,20 +177,29 @@ export default function DriverDashboard() {
 
   // ─── JOB ACTIONS ───
   const acceptRequest = async (req) => {
-    // Attempt to lock
-    const { data, error } = await supabase
-      .from('ambulance_requests')
-      .update({ driver_id: user.id, status: 'accepted' })
-      .eq('id', req.id)
-      .eq('status', 'requesting')
-      .select();
+    try {
+      // Attempt to lock
+      const { data, error } = await supabase
+        .from('ambulance_requests')
+        .update({ driver_id: user.id, status: 'accepted' })
+        .eq('id', req.id)
+        .eq('status', 'requesting')
+        .select();
 
-    if (error || !data || data.length === 0) {
-      alert("This request was taken by another driver or cancelled.");
-      fetchPendingRequests();
-    } else {
-      setActiveJob(data[0]);
-      await updateDriverState(true, 'busy');
+      if (error) {
+        alert("Database error: " + error.message);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        alert("This request was taken by another driver or cancelled.");
+        fetchPendingRequests();
+      } else {
+        setActiveJob(data[0]);
+        await updateDriverState(true, 'busy');
+      }
+    } catch (err) {
+      alert("Runtime Error: " + err.message);
     }
   };
 
@@ -198,9 +215,21 @@ export default function DriverDashboard() {
     if (data) {
       if (newStatus === 'completed') {
         setActiveJob(null);
+        setDijkstraRoute([]);
+        setTargetHospital(null);
         await updateDriverState(true, 'online');
       } else {
         setActiveJob(data);
+
+        // If patient is picked up, calculate Dijkstra path to destination hospital
+        if (newStatus === 'patient_picked_up' && data.dropoff_hospital_id && driverLocation) {
+          const { data: hosp } = await supabase.from('hospital_admins').select('lat, lng, full_name').eq('id', data.dropoff_hospital_id).maybeSingle();
+          if (hosp && hosp.lat && hosp.lng) {
+            setTargetHospital(hosp);
+            const path = calculateDijkstraPath(driverLocation, hosp);
+            setDijkstraRoute(path);
+          }
+        }
       }
     }
   };
@@ -253,10 +282,23 @@ export default function DriverDashboard() {
             </>
           )}
 
-          {activeJob && (
+          {activeJob && activeJob.status !== 'patient_picked_up' && (
             <Marker position={[activeJob.pickup_lat, activeJob.pickup_lng]} icon={patientIcon}>
               <Popup><b>Patient Location</b></Popup>
             </Marker>
+          )}
+
+          {targetHospital && (
+            <Marker position={[targetHospital.lat, targetHospital.lng]} icon={hospitalIcon} zIndexOffset={900}>
+              <Popup><b>{targetHospital.full_name || 'Dropoff Hospital'}</b></Popup>
+            </Marker>
+          )}
+
+          {dijkstraRoute.length > 0 && (
+            <Polyline 
+              positions={dijkstraRoute.map(p => [p.lat, p.lng])} 
+              pathOptions={{ color: '#0ea5e9', weight: 6, opacity: 0.8 }} 
+            />
           )}
         </MapContainer>
 
@@ -268,10 +310,10 @@ export default function DriverDashboard() {
 
       {/* BOTTOM SHEET: REQUESTS OR ACTIVE JOB */}
       {isOnline && (
-        <div className="bg-white shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)] rounded-t-3xl border-t border-gray-100 max-h-[50vh] overflow-y-auto">
+        <div className="relative z-50 bg-white shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)] rounded-t-3xl border-t border-gray-100 max-h-[50vh] overflow-y-auto">
           
           {/* GRABBER */}
-          <div className="w-full flex justify-center pt-3 pb-2 sticky top-0 bg-white" onClick={() => {}}>
+          <div className="w-full flex justify-center pt-3 pb-2 sticky top-0 bg-white z-10" onClick={() => {}}>
             <div className="w-12 h-1.5 bg-gray-200 rounded-full"></div>
           </div>
 
