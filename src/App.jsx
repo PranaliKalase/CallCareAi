@@ -11,6 +11,7 @@ import DoctorDashboard from './pages/DoctorDashboard';
 import HospitalDashboard from './pages/HospitalDashboard';
 import Records from './pages/Records';
 import SymptomChecker from './pages/SymptomChecker';
+import DriverDashboard from './pages/DriverDashboard';
 
 import EmergencyTracker from './pages/EmergencyTracker';
 import IcuBeds from './pages/IcuBeds';
@@ -36,6 +37,10 @@ const ProtectedRoute = ({ children, roleRequired }) => {
   }
 
   if (roleRequired === 'hospital' && profile?.role !== 'hospital') {
+    return <Navigate to="/home" />;
+  }
+  
+  if (roleRequired === 'driver' && profile?.role !== 'driver') {
     return <Navigate to="/home" />;
   }
   
@@ -189,19 +194,26 @@ const Sidebar = () => {
 
   const navItems = profile?.role === 'doctor' 
     ? [
-        { name: 'Dashboard', icon: HomeIcon, path: '/doctor-dashboard' },
+        { name: 'Dashboard', icon: HomeIcon, path: '/home' },
+        { name: 'Manage Patients', icon: CalendarIcon, path: '/doctor-manage' },
         { name: 'My Profile', icon: UserIcon, path: '/profile' }
       ]
     : profile?.role === 'hospital'
     ? [
-        { name: 'Dashboard', icon: Building, path: '/hospital-dashboard' },
+        { name: 'Dashboard', icon: HomeIcon, path: '/home' },
         { name: 'Room Allocation', icon: Activity, path: '/room-allocation' },
+        { name: 'Hospital Mngmt', icon: Building, path: '/hospital-manage' },
+        { name: 'My Profile', icon: UserIcon, path: '/profile' }
+      ]
+    : profile?.role === 'driver'
+    ? [
+        { name: 'Dashboard', icon: HomeIcon, path: '/driver-dashboard' },
         { name: 'My Profile', icon: UserIcon, path: '/profile' }
       ]
     : [
         { name: 'Dashboard', icon: HomeIcon, path: '/home' },
         { name: 'ICU Beds', icon: Activity, path: '/icu-beds' },
-        { name: 'Bookings', icon: CalendarIcon, path: '/bookings' },
+        { name: 'Doctor Appointment', icon: CalendarIcon, path: '/bookings' },
         { name: 'Medical Records', icon: History, path: '/records' },
         { name: 'My Profile', icon: UserIcon, path: '/profile' },
       ];
@@ -274,20 +286,26 @@ const BottomNav = () => {
 
   const tabs = profile?.role === 'doctor'
     ? [
-        { name: 'Dashboard', icon: HomeIcon, path: '/doctor-dashboard' },
+        { name: 'Home', icon: HomeIcon, path: '/home' },
+        { name: 'Manage', icon: CalendarIcon, path: '/doctor-manage' },
         { name: 'Profile', icon: UserIcon, path: '/profile' }
       ]
     : profile?.role === 'hospital'
     ? [
-        { name: 'Dashboard', icon: Building, path: '/hospital-dashboard' },
+        { name: 'Home', icon: HomeIcon, path: '/home' },
         { name: 'Rooms', icon: Activity, path: '/room-allocation' },
+        { name: 'Profile', icon: UserIcon, path: '/profile' }
+      ]
+    : profile?.role === 'driver'
+    ? [
+        { name: 'Dashboard', icon: HomeIcon, path: '/driver-dashboard' },
         { name: 'Profile', icon: UserIcon, path: '/profile' }
       ]
     : [
         { name: 'Ambulance', icon: PlusSquare, path: '/emergency', isEmergency: true },
         { name: 'ICU Beds', icon: Activity, path: '/icu-beds' },
         { name: 'Home', icon: HomeIcon, path: '/home' },
-        { name: 'Bookings', icon: CalendarIcon, path: '/bookings' },
+        { name: 'Dr. Appointment', icon: CalendarIcon, path: '/bookings' },
         { name: 'Profile', icon: UserIcon, path: '/profile' }
       ];
 
@@ -335,9 +353,8 @@ function App() {
   }
 
   const getRedirectPath = () => {
-    if (profile?.role === 'doctor') return '/doctor-dashboard';
-    if (profile?.role === 'hospital') return '/hospital-dashboard';
-    return '/emergency';
+    if (profile?.role === 'driver') return '/driver-dashboard';
+    return '/home';
   };
 
   return (
@@ -363,31 +380,10 @@ function App() {
               <Route path="/icu-beds" element={<ProtectedRoute><IcuBeds /></ProtectedRoute>} />
               <Route path="/hospital/:id" element={<ProtectedRoute><HospitalDetail /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              <Route 
-                path="/hospital-dashboard/*" 
-                element={
-                  <ProtectedRoute roleRequired="hospital">
-                    <HospitalDashboard />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/room-allocation" 
-                element={
-                  <ProtectedRoute roleRequired="hospital">
-                    <RoomAllocation />
-                  </ProtectedRoute>
-                } 
-              />
-              
-              <Route 
-                path="/doctor-dashboard/*" 
-                element={
-                  <ProtectedRoute roleRequired="doctor">
-                    <DoctorDashboard />
-                  </ProtectedRoute>
-                } 
-              />
+              <Route path="/room-allocation" element={<ProtectedRoute roleRequired="hospital"><RoomAllocation /></ProtectedRoute>} />
+              <Route path="/doctor-manage" element={<ProtectedRoute roleRequired="doctor"><DoctorDashboard /></ProtectedRoute>} />
+              <Route path="/hospital-manage" element={<ProtectedRoute roleRequired="hospital"><HospitalDashboard /></ProtectedRoute>} />
+              <Route path="/driver-dashboard" element={<ProtectedRoute roleRequired="driver"><DriverDashboard /></ProtectedRoute>} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </main>

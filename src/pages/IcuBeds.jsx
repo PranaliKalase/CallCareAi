@@ -25,7 +25,7 @@ const defaultIcon = new L.Icon({
   popupAnchor: [0, -32],
 });
 
-const LocationMarker = ({ position, setPosition, setAddress }) => {
+const LocationMarker = ({ position, setPosition, setAddress, shouldLocate, setShouldLocate, setIsLocating }) => {
   const map = useMap();
   
   useEffect(() => {
@@ -33,6 +33,13 @@ const LocationMarker = ({ position, setPosition, setAddress }) => {
       map.flyTo(position, map.getZoom());
     }
   }, [position, map]);
+
+  useEffect(() => {
+    if (shouldLocate && map) {
+      map.locate({ setView: true, maxZoom: 16, enableHighAccuracy: true });
+      setShouldLocate(false);
+    }
+  }, [shouldLocate, map, setShouldLocate]);
 
   useMapEvents({
     click(e) {
@@ -46,6 +53,48 @@ const LocationMarker = ({ position, setPosition, setAddress }) => {
           }
         }).catch(err => console.error(err));
     },
+    locationfound(e) {
+      if(setIsLocating) setIsLocating(false);
+      const newPos = e.latlng;
+      setPosition([newPos.lat, newPos.lng]);
+      fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${newPos.lat}&lon=${newPos.lng}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.display_name) {
+             setAddress(data.display_name || 'Your Current Location');
+          } else {
+             setAddress('Your Current Location');
+          }
+        }).catch(() => setAddress('Your Current Location'));
+    },
+    locationerror(e) {
+      if(setIsLocating) setIsLocating(false);
+      
+      // Fallback if Leaflet fails (Browser Denied or IP map failed)
+      const fallbackToIP = async () => {
+        try {
+          let res = await fetch('https://ipapi.co/json/');
+          let data = await res.json();
+          if (!data || !data.latitude) {
+             res = await fetch('https://ipwho.is/');
+             data = await res.json();
+           }
+           if (data && data.latitude && data.longitude) {
+              const parsedPos = [data.latitude, data.longitude];
+              setPosition(parsedPos);
+              setAddress(`${data.city || 'Unknown City'}, ${data.region || 'Unknown Region'}`);
+              map.flyTo(parsedPos, map.getZoom());
+           } else {
+              alert("Leaflet Geolocation failed: " + e.message + ". Please manual click to set pin.");
+           }
+        } catch(err) {
+           alert("Leaflet Geolocation failed: " + e.message + ". Please manual click to set pin.");
+        }
+      };
+      
+      console.warn("Leaflet map.locate failed, falling back to IP", e);
+      fallbackToIP();
+    }
   });
 
   return position === null ? null : (
@@ -88,47 +137,11 @@ const LocationPrompt = ({ onLocationSelected }) => {
     return () => clearTimeout(timer);
   }, [query]);
 
+  const [shouldLocate, setShouldLocate] = useState(false);
+
   const handleUseGPS = () => {
     setIsLocating(true);
-
-    const fallbackToIP = async () => {
-      try {
-        const res = await fetch('https://ipapi.co/json/');
-        const data = await res.json();
-        if (data && data.latitude && data.longitude) {
-           const newPos = [data.latitude, data.longitude];
-           setMapPosition(newPos);
-           setAddress(`${data.city || 'Unknown City'}, ${data.region || 'Unknown Region'}`);
-        } else {
-           alert("Unable to detect location automatically. Please select it on the map.");
-        }
-      } catch(e) {
-        alert("Unable to detect location automatically. Please select it on the map.");
-      }
-      setIsLocating(false);
-    };
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setIsLocating(false);
-        const newPos = [pos.coords.latitude, pos.coords.longitude];
-        setMapPosition(newPos);
-        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${newPos[0]}&lon=${newPos[1]}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data && data.display_name) {
-               setAddress(data.display_name || 'Your Current Location');
-            } else {
-               setAddress('Your Current Location');
-            }
-          }).catch(() => setAddress('Your Current Location'));
-      },
-      (err) => {
-        console.warn("Native GPS failed, falling back to IP Geolocation API", err);
-        fallbackToIP();
-      },
-      { enableHighAccuracy: true, timeout: 5000 }
-    );
+    setShouldLocate(true);
   };
 
   const handleSelectPlace = (place) => {
@@ -211,7 +224,14 @@ const LocationPrompt = ({ onLocationSelected }) => {
               url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
               attribution='&copy; OpenStreetMap &copy; CARTO'
             />
-            <LocationMarker position={mapPosition} setPosition={setMapPosition} setAddress={setAddress} />
+            <LocationMarker 
+               position={mapPosition} 
+               setPosition={setMapPosition} 
+               setAddress={setAddress} 
+               shouldLocate={shouldLocate} 
+               setShouldLocate={setShouldLocate} 
+               setIsLocating={setIsLocating} 
+            />
           </MapContainer>
         </div>
         
@@ -278,52 +298,59 @@ const IcuBeds = () => {
 
   const fetchHospitals = async (loc) => {
     setLoading(true);
-    const { data } = await supabase
-      .from('hospital_admins')
-      .select('id, full_name, city, state, address, lat, lng, available_icu_beds, specializations, phone');
+    try {
+      const { data, error } = await supabase
+        .from('hospital_admins')
+        .select('id, full_name, city, state, address, lat, lng, available_icu_beds, specializations, phone');
 
-    if (data) {
-      const specSet = new Set();
-      data.forEach(h => {
-        if (h.specializations) {
-          h.specializations.forEach(s => specSet.add(s));
-        }
-      });
-      setAllSpecializations(['All', ...Array.from(specSet)]);
+      if (error) throw error;
 
-      const searchKeywords = loc.address ? loc.address.toLowerCase().split(/[\\s,]+/) : [];
+      if (data) {
+        const specSet = new Set();
+        data.forEach(h => {
+          if (h.specializations && Array.isArray(h.specializations)) {
+            h.specializations.forEach(s => specSet.add(s));
+          }
+        });
+        setAllSpecializations(['All', ...Array.from(specSet)]);
 
-      const withDistance = data.map(h => {
-        let dist = Infinity;
-        if (h.lat && h.lng && loc.lat && loc.lng) {
-          dist = getDistance(loc.lat, loc.lng, h.lat, h.lng);
-        }
+        const searchKeywords = loc.address ? loc.address.toLowerCase().split(/[\\s,]+/) : [];
 
-        // Keyword Match Fallback
-        const hospText =(h.full_name + " " + h.address + " " + h.city).toLowerCase();
-        let hasKeywordMatch = false;
+        const withDistance = data.map(h => {
+          let dist = Infinity;
+          if (h.lat && h.lng && loc.lat && loc.lng) {
+            dist = getDistance(loc.lat, loc.lng, h.lat, h.lng);
+          }
+
+          // Keyword Match Fallback
+          const hospText =(h.full_name + " " + h.address + " " + h.city).toLowerCase();
+          let hasKeywordMatch = false;
+          
+          if (searchKeywords.length > 0 && searchKeywords.some(kw => kw.length > 3 && hospText.includes(kw))) {
+              hasKeywordMatch = true;
+              if (dist === Infinity) dist = 0.5;
+          }
+
+          const etaMins = dist !== Infinity ? Math.ceil(dist * 2 + 3) : 15;
+          return {
+            ...h,
+            distance: dist,
+            eta: etaMins,
+            icuBeds: h.available_icu_beds || 0,
+            specializations: Array.isArray(h.specializations) ? h.specializations : [],
+            isKeywordMatch: hasKeywordMatch
+          };
+        }).sort((a, b) => a.distance - b.distance);
         
-        // If they don't have lat/lng but match the city/address keywords, give them a synthetic 0km distance
-        if (searchKeywords.length > 0 && searchKeywords.some(kw => kw.length > 3 && hospText.includes(kw))) {
-            hasKeywordMatch = true;
-            if (dist === Infinity) dist = 0.5; // Simulate a close distance if it's a keyword match but no GPS
-            // If GPS places it far away, but they searched exactly for this hospital name or area, we can still show it
-        }
-
-        const etaMins = dist !== Infinity ? Math.ceil(dist * 2 + 3) : 15;
-        return {
-          ...h,
-          distance: dist,
-          eta: etaMins,
-          icuBeds: h.available_icu_beds || 0,
-          specializations: h.specializations || [],
-          isKeywordMatch: hasKeywordMatch
-        };
-      }).sort((a, b) => a.distance - b.distance);
-      
-      setHospitals(withDistance);
+        setHospitals(withDistance);
+      }
+    } catch (err) {
+      console.error("Error fetching hospitals:", err);
+      // Fallback to empty list so it doesn't hang
+      setHospitals([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleLocationSelected = (locData) => {

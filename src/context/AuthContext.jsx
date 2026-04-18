@@ -21,7 +21,7 @@ export const AuthProvider = ({ children }) => {
     const userId = currentUser.id;
     const meta = currentUser.user_metadata || {};
     const role = meta.role || 'patient';
-    const tableName = role === 'doctor' ? 'doctors' : role === 'hospital' ? 'hospital_admins' : 'patients';
+    const tableName = role === 'doctor' ? 'doctors' : role === 'hospital' ? 'hospital_admins' : role === 'driver' ? 'ambulance_drivers' : 'patients';
 
     try {
       const { data } = await supabase
@@ -185,15 +185,14 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ── Sign Up ──
-  const signUp = async (email, password, full_name, role, specialization, hospital_name, license_number, proofFile, address, city, state, phone, hospital_id) => {
+  const signUp = async (email, password, full_name, role, specialization, hospital_name, license_number, proofFile, address, city, state, phone, hospital_id, vehicle_number, driver_type) => {
     authOperationInProgress.current = true;
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: { full_name, role, specialization, hospital_name, license_number, address, city, state, phone, hospital_id }
+          data: { full_name, role, specialization, hospital_name, license_number, address, city, state, phone, hospital_id, vehicle_number, driver_type }
         }
       });
 
@@ -225,6 +224,12 @@ export const AuthProvider = ({ children }) => {
           if (city) updates.city = city;
           if (state) updates.state = state;
           if (phone) updates.phone = phone;
+        } else if (role === 'driver') {
+          tableName = 'ambulance_drivers';
+          if (phone) updates.phone = phone;
+          if (vehicle_number) updates.vehicle_number = vehicle_number;
+          if (license_number) updates.license_number = license_number;
+          if (driver_type) updates.type = driver_type;
         }
 
         updates.role = role;
@@ -247,12 +252,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ── Sign Out ──
   const signOut = async () => {
     authOperationInProgress.current = true;
     try {
       await supabase.auth.signOut();
-      localStorage.removeItem('careplus-auth');
+      localStorage.clear();
       sessionStorage.clear();
     } catch (err) {
       console.warn('Sign out error:', err);
@@ -260,9 +264,8 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setProfile(null);
       setLoading(false);
-      // Extra precaution for state drift
-      window.location.href = '/';
       setTimeout(() => { authOperationInProgress.current = false; }, 500);
+      window.location.href = '/auth';
     }
   };
 

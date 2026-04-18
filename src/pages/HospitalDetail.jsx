@@ -85,6 +85,10 @@ const HospitalDetail = () => {
   };
 
   const handleBookBed = (wardId, bedId) => {
+    if (bookedBeds.size >= 2) {
+      alert("You can only reserve up to 2 beds at a time during an emergency.");
+      return;
+    }
     setBookingBed(bedId);
     setTimeout(() => {
       setBookedBeds(prev => new Set([...prev, bedId]));

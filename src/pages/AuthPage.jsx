@@ -4,7 +4,7 @@ import { supabase } from '../services/supabase';
 import {
   User, Stethoscope, Building2, Mail, Lock, Eye, EyeOff,
   ArrowRight, ArrowLeft, Upload, FileCheck, AlertCircle,
-  CheckCircle2, Shield, Heart, Loader2
+  CheckCircle2, Shield, Heart, Loader2, Truck
 } from 'lucide-react';
 
 const ROLES = [
@@ -44,6 +44,18 @@ const ROLES = [
     hoverBorder: 'hover:border-emerald-300',
     shadow: 'shadow-emerald-100',
   },
+  {
+    id: 'driver',
+    label: 'Ambulance',
+    icon: Truck,
+    description: 'Accept emergency requests',
+    gradient: 'from-orange-500 to-amber-600',
+    bgLight: 'bg-orange-50',
+    textColor: 'text-orange-600',
+    borderColor: 'border-orange-200',
+    hoverBorder: 'hover:border-orange-300',
+    shadow: 'shadow-orange-100',
+  },
 ];
 
 export default function AuthPage() {
@@ -74,6 +86,10 @@ export default function AuthPage() {
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [phone, setPhone] = useState('');
+
+  // Additional Driver-specific fields
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [driverType, setDriverType] = useState('Emergency');
 
   // Hospital list
   const [hospitals, setHospitals] = useState([]);
@@ -118,6 +134,8 @@ export default function AuthPage() {
     setCity('');
     setState('');
     setPhone('');
+    setVehicleNumber('');
+    setDriverType('Emergency');
     setError('');
     setSuccess('');
   };
@@ -172,6 +190,12 @@ export default function AuthPage() {
         if (!city.trim()) return 'City is required';
         if (!phone.trim()) return 'Phone number is required';
       }
+
+      if (selectedRole === 'driver') {
+        if (!phone.trim()) return 'Phone number is required';
+        if (!vehicleNumber.trim()) return 'Ambulance vehicle number is required';
+        if (!licenseNumber.trim()) return 'License number is required';
+      }
     }
     return null;
   };
@@ -209,7 +233,9 @@ export default function AuthPage() {
           city || undefined,
           state || undefined,
           phone || undefined,
-          hospitalId || undefined
+          hospitalId || undefined,
+          vehicleNumber || undefined,
+          driverType || undefined
         );
       }
     } catch (err) {
@@ -647,6 +673,71 @@ export default function AuthPage() {
                         className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-400 transition-all text-sm shadow-sm"
                         required
                       />
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Driver-Only Fields ── */}
+                {selectedRole === 'driver' && (
+                  <div className="space-y-4 pt-3 border-t border-gray-100">
+                    <p className="text-xs text-orange-600 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                      <Truck className="w-3.5 h-3.5" /> Ambulance Details
+                    </p>
+
+                    <div>
+                      <label className={labelClass}>Phone Number</label>
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+91 9000000000"
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-400 transition-all text-sm shadow-sm"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className={labelClass}>Vehicle Number</label>
+                      <input
+                        type="text"
+                        value={vehicleNumber}
+                        onChange={(e) => setVehicleNumber(e.target.value)}
+                        placeholder="e.g. MH 01 AB 1234"
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-400 transition-all text-sm shadow-sm"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className={labelClass}>Driving License ID</label>
+                      <input
+                        type="text"
+                        value={licenseNumber}
+                        onChange={(e) => setLicenseNumber(e.target.value)}
+                        placeholder="License Number"
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-400 transition-all text-sm shadow-sm"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className={labelClass}>Ambulance Type</label>
+                      <div className="relative">
+                        <select
+                          value={driverType}
+                          onChange={(e) => setDriverType(e.target.value)}
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-400 transition-all text-sm appearance-none shadow-sm cursor-pointer"
+                        >
+                          <option value="Emergency">Standard Emergency</option>
+                          <option value="Basic">BLS (Basic Life Support)</option>
+                          <option value="ICU">ALS / ICU (Advanced Life Support)</option>
+                        </select>
+                        <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

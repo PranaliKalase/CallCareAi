@@ -147,6 +147,7 @@ const Bookings = () => {
   const [activeTab, setActiveTab] = useState('hospitals');
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [hospitalError, setHospitalError] = useState(null);
 
   // Hospital list
   const [hospitals, setHospitals] = useState([]);
@@ -169,7 +170,7 @@ const Bookings = () => {
   const filteredHospitals = hospitals.filter(h => {
     if (filterState && h.state !== filterState) return false;
     if (filterCity && h.city !== filterCity) return false;
-    if (search && !h.name?.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !h.name?.toLowerCase().includes(search.trim().toLowerCase())) return false;
     return true;
   });
 
@@ -185,8 +186,10 @@ const Bookings = () => {
   const [createdAppointment, setCreatedAppointment] = useState(null);
 
   useEffect(() => {
-    fetchHospitals();
-  }, [userLocation, user]);
+    if (user) {
+      fetchHospitals();
+    }
+  }, [userLocation, user?.id]); // Trigger reliably
 
   // ── Location ──
   const requestLocation = () => {
@@ -218,6 +221,7 @@ const Bookings = () => {
   // ── Fetch hospitals ──
   const fetchHospitals = async () => {
     try {
+      setHospitalError(null);
       const { data, error } = await supabase.from('hospital_admins').select('*');
       if (error) throw error;
       const sorted = (data || []).map(h => ({
@@ -227,7 +231,10 @@ const Bookings = () => {
         type: 'Medical Centre',
       })).sort((a, b) => a.distance - b.distance);
       setHospitals(sorted);
-    } catch (err) { console.error('fetchHospitals:', err); }
+    } catch (err) { 
+      console.error('fetchHospitals:', err);
+      setHospitalError(err.message || String(err));
+    }
   };
 
   // ── Open hospital → step 2 ──
@@ -287,6 +294,10 @@ const Bookings = () => {
         .sort((a, b) => a.start_time.localeCompare(b.start_time))
     : [];
 
+  // ══════════════════
+  //  MAIN RENDER
+  // ══════════════════
+
   // ══════════════════════════════
   //  LOCATION PERMISSION SCREEN
   // ══════════════════════════════
@@ -305,15 +316,11 @@ const Bookings = () => {
           disabled={loading}
           className="w-full max-w-xs py-4 bg-primary-600 hover:bg-primary-700 text-white rounded-2xl font-bold shadow-lg shadow-primary-600/30 transition-all active:scale-95 flex items-center justify-center gap-2"
         >
-          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Navigation2 className="w-5 h-5" /> Allow Location</>}
+          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Navigation2 className="w-5 h-5" /> Find Nearby Hospitals</>}
         </button>
       </div>
     );
   }
-
-  // ══════════════════
-  //  MAIN RENDER
-  // ══════════════════
   return (
     <div className="flex flex-col min-h-screen pb-24 md:pb-6 bg-gray-50">
 
