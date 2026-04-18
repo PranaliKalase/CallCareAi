@@ -8,14 +8,9 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Guard flags
   const authOperationInProgress = useRef(false);
   const initialLoadDone = useRef(false);
 
-  /**
-   * Fetches the user's profile from the correct role-specific table.
-   * Returns the profile object or a minimal fallback — never throws.
-   */
   const fetchProfile = useCallback(async (currentUser) => {
     if (!currentUser) return null;
     const userId = currentUser.id;
@@ -32,62 +27,61 @@ export const AuthProvider = ({ children }) => {
 
       if (data) return { ...data, role };
 
-      // No row yet — create one
       const updates = { id: userId, full_name: meta.full_name || 'User', role };
       await supabase.from(tableName).upsert(updates, { onConflict: 'id' });
       return updates;
     } catch (err) {
-      console.warn('fetchProfile error (non-fatal):', err.message);
       return { id: userId, role, full_name: meta.full_name || 'User' };
     }
   }, []);
 
-  // ── Bootstrap: run exactly once on mount ──
   useEffect(() => {
     let cancelled = false;
 
     const bootstrap = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-
         if (cancelled) return;
 
         if (session?.user) {
-          const prof = await fetchProfile(session.user);
-          if (!cancelled) {
-            setUser(session.user);
-            setProfile(prof);
-          }
+          const meta = session.user.user_metadata || {};
+          const role = meta.role || 'patient';
+          // Set user + minimal profile immediately (no DB wait)
+          setUser(session.user);
+          setProfile({ id: session.user.id, role, full_name: meta.full_name || 'User' });
+          setLoading(false);
+          initialLoadDone.current = true;
+
+          // Fetch full profile in background
+          fetchProfile(session.user).then(fullProfile => {
+            if (!cancelled && fullProfile) setProfile(fullProfile);
+          });
+          return;
         }
       } catch (err) {
         console.error('Auth bootstrap error:', err);
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-          initialLoadDone.current = true;
-        }
+      }
+      if (!cancelled) {
+        setLoading(false);
+        initialLoadDone.current = true;
       }
     };
 
     bootstrap();
 
-    // Safety net: if bootstrap hangs (e.g. network timeout), force loading=false after 5s
     const safetyTimer = setTimeout(() => {
       if (!cancelled && !initialLoadDone.current) {
-        console.warn('[Auth] Safety timeout — forcing loading=false');
         setLoading(false);
       }
-    }, 5000);
+    }, 1500);
 
-    // ── Auth state change listener ──
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (cancelled) return;
-
-        // Skip events fired during our own signIn/signUp/signOut calls
         if (authOperationInProgress.current) return;
 
-        console.log(`[Auth] Event: ${event}`);
+        // Skip INITIAL_SESSION — bootstrap already handles it
+        if (event === 'INITIAL_SESSION') return;
 
         if (event === 'SIGNED_OUT') {
           setUser(null);
@@ -96,7 +90,13 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        if (['SIGNED_IN', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event) && session?.user) {
+        if (event === 'TOKEN_REFRESHED' && session?.user) {
+          // Just update user object, no need to re-fetch profile
+          if (!cancelled) setUser(session.user);
+          return;
+        }
+
+        if (['SIGNED_IN', 'USER_UPDATED'].includes(event) && session?.user) {
           const prof = await fetchProfile(session.user);
           if (!cancelled) {
             setUser(session.user);
@@ -124,7 +124,6 @@ export const AuthProvider = ({ children }) => {
       if (data?.user) {
         const metaRole = data.user.user_metadata?.role || 'patient';
 
-        // Doctor approval gate
         if (metaRole === 'doctor') {
           const { data: docData } = await supabase
             .from('doctors')
@@ -140,13 +139,19 @@ export const AuthProvider = ({ children }) => {
           }
         }
 
-        const profileData = await fetchProfile(data.user);
-        setProfile(profileData);
+        // Set user immediately so ProtectedRoute redirects instantly
+        const meta = data.user.user_metadata || {};
         setUser(data.user);
+        setProfile({ id: data.user.id, role: metaRole, full_name: meta.full_name || 'User' });
         setLoading(false);
+
+        // Fetch full profile in background (non-blocking)
+        fetchProfile(data.user).then(fullProfile => {
+          if (fullProfile) setProfile(fullProfile);
+        });
       }
     } finally {
-      setTimeout(() => { authOperationInProgress.current = false; }, 500);
+      authOperationInProgress.current = false;
     }
   };
 
@@ -213,7 +218,7 @@ export const AuthProvider = ({ children }) => {
         }
       }
     } finally {
-      setTimeout(() => { authOperationInProgress.current = false; }, 500);
+      authOperationInProgress.current = false;
     }
   };
 
@@ -229,7 +234,7 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setProfile(null);
       setLoading(false);
-      setTimeout(() => { authOperationInProgress.current = false; }, 500);
+      authOperationInProgress.current = false;
       window.location.href = '/auth';
     }
   };

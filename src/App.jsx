@@ -1,22 +1,23 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
-import AuthPage from './pages/AuthPage';
-import LandingPage from './pages/LandingPage';
-import Home from './pages/Home';
-import Bookings from './pages/Bookings';
-import Profile from './pages/Profile';
 import { Home as HomeIcon, Calendar as CalendarIcon, PhoneCall, User as UserIcon, Bell, LogOut, History, Building, Globe, Activity, PlusSquare } from 'lucide-react';
-import DoctorDashboard from './pages/DoctorDashboard';
-import HospitalDashboard from './pages/HospitalDashboard';
-import Records from './pages/Records';
-import SymptomChecker from './pages/SymptomChecker';
-import DriverDashboard from './pages/DriverDashboard';
 
-import EmergencyTracker from './pages/EmergencyTracker';
-import IcuBeds from './pages/IcuBeds';
-import HospitalDetail from './pages/HospitalDetail';
-import RoomAllocation from './pages/RoomAllocation';
+// Lazy-load all pages for faster initial load
+const AuthPage = lazy(() => import('./pages/AuthPage'));
+const LandingPage = lazy(() => import('./pages/LandingPage'));
+const Home = lazy(() => import('./pages/Home'));
+const Bookings = lazy(() => import('./pages/Bookings'));
+const Profile = lazy(() => import('./pages/Profile'));
+const DoctorDashboard = lazy(() => import('./pages/DoctorDashboard'));
+const HospitalDashboard = lazy(() => import('./pages/HospitalDashboard'));
+const Records = lazy(() => import('./pages/Records'));
+const SymptomChecker = lazy(() => import('./pages/SymptomChecker'));
+const DriverDashboard = lazy(() => import('./pages/DriverDashboard'));
+const EmergencyTracker = lazy(() => import('./pages/EmergencyTracker'));
+const IcuBeds = lazy(() => import('./pages/IcuBeds'));
+const HospitalDetail = lazy(() => import('./pages/HospitalDetail'));
+const RoomAllocation = lazy(() => import('./pages/RoomAllocation'));
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children, roleRequired }) => {
@@ -368,6 +369,7 @@ function App() {
           {user && <TopBar />}
           
           <main className="flex-1 w-full overflow-y-auto pb-20 md:pb-6">
+            <Suspense fallback={<div className="flex items-center justify-center min-h-[50vh]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>}>
             <Routes>
               <Route path="/" element={!user ? <LandingPage /> : <Navigate to={getRedirectPath()} />} />
               <Route path="/auth" element={!user ? <AuthPage /> : <Navigate to={getRedirectPath()} />} />
@@ -386,6 +388,7 @@ function App() {
               <Route path="/driver-dashboard" element={<ProtectedRoute roleRequired="driver"><DriverDashboard /></ProtectedRoute>} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
+            </Suspense>
           </main>
           
           {user && <BottomNav />}

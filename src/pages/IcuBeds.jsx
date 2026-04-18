@@ -259,8 +259,8 @@ const IcuBeds = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   
-  // Step Management
-  const [step, setStep] = useState(0); // 0 = Location Selection, 1 = Hospital List
+  // Step Management: 0 = manual fallback, 1 = hospital list
+  const [step, setStep] = useState(1); // Start at 1 — show hospitals immediately
   const [location, setLocation] = useState(null);
   
   const [hospitals, setHospitals] = useState([]);
@@ -274,87 +274,134 @@ const IcuBeds = () => {
   const [allSpecializations, setAllSpecializations] = useState([]);
   const [bookingState, setBookingState] = useState(null); 
 
-  // Trigger hospital fetch and live subscription once location is acquired
-  useEffect(() => {
-    if (step === 1 && location) {
-      fetchHospitals(location);
-
-      const channel = supabase.channel('icu-updates-list')
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'hospital_admins' }, (payload) => {
-          setHospitals(prev => prev.map(h => {
-            if (h.id === payload.new.id) {
-              return { ...h, icuBeds: payload.new.available_icu_beds || 0 };
-            }
-            return h;
-          }));
-        })
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
-  }, [step, location]);
-
-  const fetchHospitals = async (loc) => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('hospital_admins')
-        .select('id, full_name, city, state, address, lat, lng, available_icu_beds, specializations, phone');
-
-      if (error) throw error;
-
-      if (data) {
-        const specSet = new Set();
-        data.forEach(h => {
-          if (h.specializations && Array.isArray(h.specializations)) {
-            h.specializations.forEach(s => specSet.add(s));
-          }
-        });
-        setAllSpecializations(['All', ...Array.from(specSet)]);
-
-        const searchKeywords = loc.address ? loc.address.toLowerCase().split(/[\\s,]+/) : [];
-
-        const withDistance = data.map(h => {
-          let dist = Infinity;
-          if (h.lat && h.lng && loc.lat && loc.lng) {
-            dist = getDistance(loc.lat, loc.lng, h.lat, h.lng);
-          }
-
-          // Keyword Match Fallback
-          const hospText =(h.full_name + " " + h.address + " " + h.city).toLowerCase();
-          let hasKeywordMatch = false;
-          
-          if (searchKeywords.length > 0 && searchKeywords.some(kw => kw.length > 3 && hospText.includes(kw))) {
-              hasKeywordMatch = true;
-              if (dist === Infinity) dist = 0.5;
-          }
-
-          const etaMins = dist !== Infinity ? Math.ceil(dist * 2 + 3) : 15;
-          return {
-            ...h,
-            distance: dist,
-            eta: etaMins,
-            icuBeds: h.available_icu_beds || 0,
-            specializations: Array.isArray(h.specializations) ? h.specializations : [],
-            isKeywordMatch: hasKeywordMatch
-          };
-        }).sort((a, b) => a.distance - b.distance);
-        
-        setHospitals(withDistance);
+  // Helper: process raw hospital data with optional location
+  const processHospitals = (data, loc) => {
+    const specSet = new Set();
+    data.forEach(h => {
+      if (h.specializations && Array.isArray(h.specializations)) {
+        h.specializations.forEach(s => specSet.add(s));
       }
-    } catch (err) {
-      console.error("Error fetching hospitals:", err);
-      // Fallback to empty list so it doesn't hang
-      setHospitals([]);
-    } finally {
-      setLoading(false);
-    }
+    });
+    setAllSpecializations(['All', ...Array.from(specSet)]);
+
+    const searchKeywords = loc?.address ? loc.address.toLowerCase().split(/[\s,]+/) : [];
+
+    const withDistance = data.map(h => {
+      let dist = Infinity;
+      if (h.lat && h.lng && loc?.lat && loc?.lng) {
+        dist = getDistance(loc.lat, loc.lng, h.lat, h.lng);
+      }
+
+      const hospText = (h.full_name + " " + h.address + " " + h.city).toLowerCase();
+      let hasKeywordMatch = false;
+      
+      if (searchKeywords.length > 0 && searchKeywords.some(kw => kw.length > 3 && hospText.includes(kw))) {
+          hasKeywordMatch = true;
+          if (dist === Infinity) dist = 0.5;
+      }
+
+      const etaMins = dist !== Infinity ? Math.ceil(dist * 2 + 3) : 15;
+      return {
+        ...h,
+        distance: dist,
+        eta: etaMins,
+        icuBeds: h.available_icu_beds || 0,
+        specializations: Array.isArray(h.specializations) ? h.specializations : [],
+        isKeywordMatch: hasKeywordMatch
+      };
+    }).sort((a, b) => a.distance - b.distance);
+    
+    return withDistance;
   };
+
+  // ── Fetch hospitals + detect GPS in parallel on mount ──
+  const rawHospitalsRef = React.useRef(null);
+
+  useEffect(() => {
+    // 1. Fetch hospitals immediately (no GPS wait)
+    const fetchHospitals = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('hospital_admins')
+          .select('id, full_name, city, state, address, lat, lng, available_icu_beds, specializations, phone');
+
+        if (error) throw error;
+        if (data) {
+          rawHospitalsRef.current = data;
+          setHospitals(processHospitals(data, null));
+        }
+      } catch (err) {
+        console.error("Error fetching hospitals:", err);
+        setHospitals([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchHospitals();
+
+    // 2. Detect GPS in parallel
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, address: 'Your Current Location' };
+          setLocation(loc);
+          // Re-sort hospitals by distance now that we have coords
+          if (rawHospitalsRef.current) {
+            setHospitals(processHospitals(rawHospitalsRef.current, loc));
+          }
+          // Reverse geocode in background
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc.lat}&lon=${loc.lng}`)
+            .then(r => r.json())
+            .then(data => {
+              if (data?.display_name) {
+                setLocation(prev => ({ ...prev, address: data.display_name }));
+              }
+            }).catch(() => {});
+        },
+        async () => {
+          try {
+            let res = await fetch('https://ipapi.co/json/');
+            let data = await res.json();
+            if (!data?.latitude) {
+              res = await fetch('https://ipwho.is/');
+              data = await res.json();
+            }
+            if (data?.latitude && data?.longitude) {
+              const loc = { lat: data.latitude, lng: data.longitude, address: `${data.city || 'Unknown'}, ${data.region || ''}` };
+              setLocation(loc);
+              if (rawHospitalsRef.current) {
+                setHospitals(processHospitals(rawHospitalsRef.current, loc));
+              }
+              return;
+            }
+          } catch (_) {}
+          // GPS totally failed — user can still see all hospitals (unsorted)
+        },
+        { enableHighAccuracy: true, timeout: 3000, maximumAge: 60000 }
+      );
+    }
+
+    // 3. Real-time subscription
+    const channel = supabase.channel('icu-updates-list')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'hospital_admins' }, (payload) => {
+        setHospitals(prev => prev.map(h => {
+          if (h.id === payload.new.id) {
+            return { ...h, icuBeds: payload.new.available_icu_beds || 0 };
+          }
+          return h;
+        }));
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, []);
 
   const handleLocationSelected = (locData) => {
     setLocation(locData);
+    if (rawHospitalsRef.current) {
+      setHospitals(processHospitals(rawHospitalsRef.current, locData));
+    }
     setStep(1);
   };
 
@@ -366,7 +413,7 @@ const IcuBeds = () => {
     }, 2000);
   };
 
-  // Render Step 0: Location Prompt
+  // Render Step 0: Manual Location Prompt (fallback — rarely hit now)
   if (step === 0) {
     return <LocationPrompt onLocationSelected={handleLocationSelected} />;
   }
