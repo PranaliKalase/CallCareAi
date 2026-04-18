@@ -107,44 +107,9 @@ export const AuthProvider = ({ children }) => {
       }
     );
 
-    // ── Health/Sync Check to Prevent State Drift ──
-    const syncCurrentSession = async () => {
-      if (cancelled) return;
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          // Re-fetch only if user changed or profile dropped
-          if (!user || user.id !== session.user.id || !profile) {
-            const prof = await fetchProfile(session.user);
-            if (!cancelled) {
-              setUser(session.user);
-              setProfile(prof);
-            }
-          }
-        } else {
-          // Session dropped in background -> sign out locally
-          if (!cancelled && (user || profile)) {
-            setUser(null);
-            setProfile(null);
-          }
-        }
-      } catch (e) {}
-    };
-
-    const heartbeat = setInterval(syncCurrentSession, 60000); // 1 minute
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') syncCurrentSession();
-    };
-
-    window.addEventListener('focus', syncCurrentSession);
-    window.addEventListener('visibilitychange', handleVisibility);
-
     return () => {
       cancelled = true;
       clearTimeout(safetyTimer);
-      clearInterval(heartbeat);
-      window.removeEventListener('focus', syncCurrentSession);
-      window.removeEventListener('visibilitychange', handleVisibility);
       listener?.subscription?.unsubscribe();
     };
   }, [fetchProfile]);

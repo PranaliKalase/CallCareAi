@@ -150,7 +150,7 @@ export default function AuthPage() {
   const handleRoleSelect = (roleId) => {
     setSelectedRole(roleId);
     setError('');
-    setTimeout(() => setStep(1), 300);
+    setStep(1);
   };
 
   const handleBack = () => {
